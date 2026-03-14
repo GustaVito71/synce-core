@@ -1,0 +1,40 @@
+Description: Update to modern libtool macros
+ Replace deprecated AC_PROG_LIBTOOL with LT_INIT, add AC_CONFIG_MACRO_DIRS
+ so autoreconf finds custom m4 macros, and add ACLOCAL_AMFLAGS for aclocal.
+Author: Gustavo Perez Reyes <ghreyes71@gmail.com>
+Forwarded: not-needed
+Last-Update: 2026-03-03
+
+Index: synce-core-0.17/Makefile.am
+===================================================================
+--- synce-core-0.17.orig/Makefile.am
++++ synce-core-0.17/Makefile.am
+@@ -3,6 +3,7 @@
+ 
+ ## don't complain about missing AUTHORS, NEWS, ChangeLog, etc
+ AUTOMAKE_OPTIONS = foreign 1.4
++ACLOCAL_AMFLAGS = -I m4
+ 
+ pcfiles = libsynce.pc
+ 
+Index: synce-core-0.17/configure.ac
+===================================================================
+--- synce-core-0.17.orig/configure.ac
++++ synce-core-0.17/configure.ac
+@@ -9,6 +9,7 @@ AC_CANONICAL_HOST
+ AC_CANONICAL_TARGET
+ 
+ AM_INIT_AUTOMAKE
++AC_CONFIG_MACRO_DIRS([m4])
+ 
+ CFLAGS="-Wall -Wsign-compare -Wno-long-long $CFLAGS"
+ 
+@@ -30,7 +31,7 @@ AC_PROG_CC
+ AC_PROG_CXX
+ AC_PROG_INSTALL
+ AC_PROG_LN_S
+-AC_PROG_LIBTOOL
++LT_INIT
+ AC_PROG_MAKE_SET
+ PKG_PROG_PKG_CONFIG
+ 

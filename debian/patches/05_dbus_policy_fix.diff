@@ -1,0 +1,21 @@
+Description: Fix overly broad D-Bus policy
+ Remove the excessively permissive <allow send_type="method_call"/> rule
+ from the default D-Bus policy context. The specific send_destination rules
+ for org.synce.dccm are sufficient and avoid lintian error
+ dbus-policy-excessively-broad.
+Author: Gustavo Perez Reyes <ghreyes71@gmail.com>
+Forwarded: not-needed
+Last-Update: 2026-03-03
+
+Index: synce-core-0.17/etc/org.synce.dccm.conf
+===================================================================
+--- synce-core-0.17.orig/etc/org.synce.dccm.conf
++++ synce-core-0.17/etc/org.synce.dccm.conf
+@@ -13,7 +13,6 @@
+ 
+   <!-- Allow anyone to invoke methods on the Device and DeviceManager interfaces -->
+   <policy context="default">
+-    <allow send_type="method_call"/>
+     <allow send_destination="org.synce.dccm"
+ 	   send_interface="org.synce.dccm.Device"/>
+ 

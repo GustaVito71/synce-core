@@ -1,0 +1,3 @@
+usr/lib/*/libsynce.la
+usr/lib/python3*/dist-packages/pyrapi2.la
+usr/lib/python3*/dist-packages/pyrapi2.a

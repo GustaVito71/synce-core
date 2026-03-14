@@ -1,0 +1,135 @@
+Description: Fix PPP connection drop caused by systemd udev cgroup cleanup
+ Since systemd >= 209 (Debian 8 / Ubuntu 16+), all processes spawned during
+ udev event processing share the udev worker cgroup.  When the worker becomes
+ idle, systemd executes "Cleanup idle workers" and sends SIGKILL to every
+ process in the cgroup -- including pppd, which had forked to background but
+ remained in the same cgroup.  This caused the PPP connection to drop
+ immediately after reaching CTRL_STATE_CONNECTED.
+ .
+ Fix (two-part):
+ .
+ 1. synce-udev-serial.in: replace the bare background '&' with
+    systemd-run --no-block so the Python event handler executes in its own
+    transient service unit (and therefore its own cgroup), entirely outside
+    the udev worker cgroup.
+ .
+ 2. synceconnector.py.in (serial_start_device): wrap pppd with
+    systemd-run --no-block --unit=synce-pppd-<linkname> so pppd is the
+    main process of its own transient service unit with an independent
+    cgroup that is never subject to udev cleanup.  The nodetach option
+    keeps pppd in the foreground as the unit's main process.  A poll loop
+    on /var/run/ppp-<linkname>.pid (30 s timeout) replaces the old
+    communicate() wait that relied on pppd forking to background.
+Author: Gustavo Perez Reyes <ghreyes71@gmail.com>
+Forwarded: not-needed
+Last-Update: 2026-03-03
+
+Index: synce-core-0.17/scripts/synce-udev-serial.in
+===================================================================
+--- synce-core-0.17.orig/scripts/synce-udev-serial.in
++++ synce-core-0.17/scripts/synce-udev-serial.in
+@@ -2,6 +2,18 @@
+
+ logger -p daemon.info -t synce-udev-serial "INFO : serial event, ACTION = $ACTION, INTERFACE = $INTERFACE, DEVPATH = $DEVPATH, SUBSYSTEM = $SUBSYSTEM, DEVNAME = $DEVNAME"
+
+-@SYNCEDATADIR@/udev-synce-serial &
++# Since systemd (Debian 8+ / Ubuntu 16+) all processes spawned by a udev
++# rule share the udev worker cgroup and are killed when the worker becomes
++# idle ("Cleanup idle workers").  Using systemd-run places the handler in a
++# new transient service unit with its own cgroup, which survives the udev
++# worker lifetime.
++/bin/systemd-run --no-block \
++    --description="SynCE serial device event handler ($ACTION $DEVNAME)" \
++    --setenv=ACTION="$ACTION" \
++    --setenv=DEVPATH="$DEVPATH" \
++    --setenv=SUBSYSTEM="$SUBSYSTEM" \
++    --setenv=DEVNAME="$DEVNAME" \
++    --setenv=INTERFACE="${INTERFACE:-}" \
++    @SYNCEDATADIR@/udev-synce-serial
+
+ exit 0
+Index: synce-core-0.17/scripts/synceconnector.py.in
+===================================================================
+--- synce-core-0.17.orig/scripts/synceconnector.py.in
++++ synce-core-0.17/scripts/synceconnector.py.in
+@@ -244,38 +244,69 @@
+
+ # start pppd
+ #
++# Since systemd (Debian 8+ / Ubuntu 16+), pppd started directly from a udev
++# event handler is placed in the udev worker cgroup.  When the worker becomes
++# idle, systemd sends SIGKILL to the entire cgroup, killing pppd and dropping
++# the PPP connection.
++#
++# The fix: wrap pppd with systemd-run so it runs in its own transient service
++# unit with an independent cgroup that is never touched by udev cleanup.
++# nodetach keeps pppd in the foreground as the main process of the service.
++# We then poll for the pidfile that pppd writes once it has started up.
++#
+ def serial_start_device(device_file, local_ip, remote_ip, linkname):
+
+     ipaddr = local_ip+":"+remote_ip
+
+-    cmd_list = [PPPD, device_file, DEVSPEED, "connect", "@LIBEXECDIR@/synce-serial-chat", ipaddr, "ms-dns", local_ip]
++    pppd_args = [PPPD, device_file, DEVSPEED, "connect", "@LIBEXECDIR@/synce-serial-chat", ipaddr, "ms-dns", local_ip]
+     for item in pppopts:
+-        cmd_list.append(item)
++        pppd_args.append(item)
+
+     if platform.system() != "FreeBSD":
+-        cmd_list.append("linkname")
+-        cmd_list.append(linkname)
++        pppd_args.append("linkname")
++        pppd_args.append(linkname)
+
+-    logger.debug("calling pppd as:")
+-    logger.debug(cmd_list)
++    # nodetach: pppd stays as the foreground process of its systemd unit;
++    # systemd-run --no-block returns immediately so we don't block here.
++    pppd_args.append("nodetach")
++
++    unit_name = "synce-pppd-" + linkname
++
++    cmd_list = [
++        "/bin/systemd-run",
++        "--no-block",
++        "--unit=" + unit_name,
++        "--description=SynCE PPP connection (" + linkname + ")",
++    ] + pppd_args
+
+-    # Now bring up the connection
++    logger.debug("calling systemd-run pppd as:")
++    logger.debug(cmd_list)
+
+-    # returns a Popen object
+     try:
+         proc = subprocess.Popen(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+         output_text = proc.communicate()[0]
+     except Exception as e:
+-        logger.error("failure running pppd: %s" % e)
++        logger.error("failure running systemd-run: %s" % e)
+         return False
+
+     rc = proc.returncode
+
+     if rc != 0:
+-        logger.error("failed to initialize ppp connection, return code %d",rc)
++        logger.error("failed to start pppd service, return code %d", rc)
+         return False
+
+-    return True
++    # pppd writes its pidfile once it has initialised.  Poll until it appears
++    # (or we hit the timeout) so callers know the link is coming up.
++    pidfile = VAR_PPP + "/ppp-" + linkname + ".pid"
++    logger.debug("waiting for pppd pidfile: %s", pidfile)
++    for _ in range(30):
++        if os.path.isfile(pidfile):
++            logger.debug("pppd pidfile found, connection established")
++            return True
++        time.sleep(1)
++
++    logger.error("timed out waiting for pppd pidfile %s", pidfile)
++    return False
+
+
+ #

@@ -1,3 +1,150 @@
+synce-core (0.17-0~bookworm8) bookworm; urgency=medium
+
+  * scripts/synceconnector.py.in (serial_start_device): Wait for local IP
+    to be assigned to the PPP interface before returning True, instead of
+    returning as soon as pppd writes its pidfile. pppd writes the pidfile
+    before running the connect script; signalling dccm at that point causes
+    it to poll a non-existent address in a tight bind loop. The timeout for
+    this second phase is controlled by SERIAL_PPP_IP_TIMEOUT (default 10s).
+  * scripts/synceconnector.py.in: Add SERIAL_PPP_IP_TIMEOUT variable
+    (default 10) to allow tuning the PPP link-up wait independently of the
+    pidfile wait.
+
+ -- Gustavo Perez Reyes <ghreyes71@gmail.com>  Mon, 09 Mar 2026 02:00:00 -0300
+
+synce-core (0.17-0~bookworm7) bookworm; urgency=medium
+
+  * scripts/synceconnector.py.in (serial_start_device): Call
+    systemctl reset-failed on the transient unit name before invoking
+    systemd-run; --collect cleans up the unit after exit but a unit
+    still in loaded/failed state blocks creation of a new transient unit
+    with the same name on reconnect.
+
+ -- Gustavo Perez Reyes <ghreyes71@gmail.com>  Mon, 09 Mar 2026 00:35:00 -0300
+
+synce-core (0.17-0~bookworm6) bookworm; urgency=medium
+
+  * scripts/synceconnector.py.in (serial_start_device): Add --collect to
+    systemd-run so the transient pppd unit is automatically garbage-collected
+    after exit; without it, the unit remains in failed state and a subsequent
+    connect attempt causes systemd-run to fail with exit code 1 because a
+    unit with the same name already exists.
+  * scripts/synceconnector.py.in (serial_start_device): Log systemd-run
+    stderr output when it fails to ease future debugging.
+
+ -- Gustavo Perez Reyes <ghreyes71@gmail.com>  Mon, 09 Mar 2026 00:10:00 -0300
+
+synce-core (0.17-0~bookworm5) bookworm; urgency=medium
+
+  * scripts/synceconnector.py.in: Add missing imports: signal, time.
+    serial_start_device and serial_stop_device both use time.sleep() and
+    signal.SIGTERM but the module never imported these; caused NameError
+    on every serial connect, preventing signal_dccm_connect from running
+    and causing the PDA to drop the PPP link (LCP terminated by peer).
+  * scripts/synceconnector.py.in (serial_start_device): Suppress pppd
+    stdout/stderr from systemd journal by adding StandardOutput=null and
+    StandardError=null properties to systemd-run; pppd logs natively via
+    syslog so systemd capturing its output caused every message to appear
+    twice in syslog.
+
+ -- Gustavo Perez Reyes <ghreyes71@gmail.com>  Sun, 08 Mar 2026 23:50:00 -0300
+
+synce-core (0.17-0~bookworm4) bookworm; urgency=medium
+
+  * scripts/synceconnector.py.in (serial_get_devnum): Fix Python 2→3
+    regression: re.match.group(1) returns str; Python 2 allowed str < int
+    comparisons but Python 3 does not. Convert to int explicitly; handle
+    empty match group returning 0.
+  * scripts/udev-synce-serial.in: Fix str+int concatenation: use
+    str(devnum) when building linkname.
+  * scripts/synceconnector.py.in (rndis_dhcp_config): Fix bytes/str
+    regression: subprocess.communicate() returns bytes in Python 3;
+    decode output before split() and string concatenation.
+
+ -- Gustavo Perez Reyes <ghreyes71@gmail.com>  Sun, 08 Mar 2026 22:30:00 -0300
+
+synce-core (0.17-0~bookworm3) bookworm; urgency=medium
+
+  * python/pyrapi2.pyx: Port to Cython 3 / Python 3.
+    - Add "# cython: language_level=3" directive.
+    - Replace PyString_FromStringAndSize with PyBytes_FromStringAndSize.
+    - Replace PyCObject_FromVoidPtr with PyCapsule_New (capsule name
+      "IRAPISession" for interop with python3-rra).
+    - Fix Python 2-isms: 259L long literals → 259, basestring → (str, bytes).
+  * python/Makefile.am: Use $(PYREX) (cython3) instead of pyrexc; set
+    rapibindingsdir to dist-packages path so libtool installs the .so
+    under /usr/lib/python3.11/dist-packages (Debian convention).
+  * m4/python.m4: Fix AM_CHECK_PYTHON_HEADERS to use print() instead of
+    Python 2 print statement when probing sys.prefix.
+  * configure.ac: Replace AC_CHECK_PROGS(PYREX, pyrexc) with cython3,
+    update minimum Python version to 3.0, remove Pyrex 0.9.6 version check,
+    update PYREX existence test for cython3.
+  * debian/control: Add cython3, python3-dev to Build-Depends; add new
+    binary package python3-rapi2.
+  * debian/rules: Enable python bindings (--enable-python-bindings),
+    add --with python3 for dh_python3 integration.
+  * debian/python3-rapi2.install: New file (glob python3*/dist-packages).
+  * debian/not-installed: Add pyrapi2.la, pyrapi2.a.
+  * debian/patches/07_cython3_bindings.diff: New patch capturing all
+    above source-tree changes.
+
+ -- Gustavo Perez Reyes <ghreyes71@gmail.com>  Mon, 03 Mar 2026 16:00:00 -0300
+
+synce-core (0.17-0~bookworm2) bookworm; urgency=medium
+
+  * scripts/synce-udev-serial.in: Replace background & with systemd-run
+    --no-block so the Python event handler runs in its own transient
+    systemd service unit, escaping the udev worker cgroup.  Since
+    systemd >= 209 (Debian 8 / Ubuntu 16+) the "Cleanup idle workers"
+    mechanism sends SIGKILL to every process in the udev cgroup once the
+    worker becomes idle, killing long-lived children such as pppd.
+  * scripts/synceconnector.py.in (serial_start_device): Wrap pppd with
+    systemd-run --no-block --unit=synce-pppd-<linkname> so pppd runs as
+    the main process of its own transient service unit with an independent
+    cgroup that is never subject to udev cleanup.  Add the nodetach option
+    to keep pppd in the foreground as the unit's main process.  Replace
+    the communicate() wait (which relied on pppd forking to background)
+    with a poll loop on /var/run/ppp-<linkname>.pid (30 s timeout).
+
+ -- Gustavo Perez Reyes <ghreyes71@gmail.com>  Tue, 03 Mar 2026 12:00:00 -0300
+
+synce-core (0.17-0~bookworm1) bookworm; urgency=medium
+
+  * Port to Debian 12 Bookworm.
+  * debian/control: Bump debhelper compat to 13, update Standards-Version
+    to 4.6.2, remove Python 2 build-deps (python-pyrex has no Python 3
+    equivalent for pyrapi2.pyx), drop libsynce-dbg (replaced by auto dbgsym),
+    drop python-rapi2 (Python 2 only), drop synce-bluetooth (bluez-compat
+    removed from Bookworm), drop synce-doc (non-critical), update Maintainer.
+    Add python3 to Depends of synce-tools and synce-dccm.
+  * debian/rules: Rewrite using dh sequencer. Add override_dh_makeshlibs
+    to pin libsynce0 shlibs version to (>= 0.17-0~bookworm1) (tilde epoch
+    sorts before release suffix in dpkg comparison). Add override_dh_install
+    and override_dh_installman to rename p-binaries/manpages with synce-
+    prefix. Disable Python and bluetooth via configure flags.
+  * debian/compat: Removed; debhelper-compat in Build-Depends.
+  * debian/*.install: Update library paths to multiarch layout.
+  * debian/not-installed: New file; exclude libtool .la file from install.
+  * debian/source/options: New file; extend-diff-ignore for autoreconf
+    generated files (configure, aclocal.m4, ltmain.sh, Makefile.in, etc.).
+  * configure.ac: Replace deprecated AC_PROG_LIBTOOL with LT_INIT.
+    Add AC_CONFIG_MACRO_DIRS([m4]) so autoreconf finds custom m4 macros.
+  * Makefile.am: Add ACLOCAL_AMFLAGS = -I m4.
+  * scripts/synceconnector.py.in: Port to Python 3 (configparser,
+    except-as syntax, updated shebang).
+  * scripts/synce-serial.in: Port to Python 3 (configparser, print(),
+    except-as syntax, updated shebang).
+  * scripts/udev-synce-rndis.in: Port to Python 3 (key-in-dict syntax,
+    updated shebang).
+  * scripts/udev-synce-serial.in: Port to Python 3 (configparser,
+    key-in-dict syntax, except-as syntax, updated shebang).
+  * dccm/synce-unlock: Port to Python 3 (print(), input(), updated shebang).
+  * etc/org.synce.dccm.conf: Remove overly broad D-Bus policy rule
+    (<allow send_type="method_call"/>); specific send_destination rules
+    are sufficient.
+
+ -- Gustavo Perez Reyes <ghreyes71@gmail.com>  Tue, 03 Mar 2026 00:00:00 -0300
+
 synce-core (0.17-0ubuntu0~ppa1~xenial2) xenial; urgency=medium
 
   * debian/control - change dependency on dhcp3-client to isc-dhcp-client in binary packages also

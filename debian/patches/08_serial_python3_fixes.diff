@@ -1,0 +1,119 @@
+--- a/scripts/synceconnector.py.in	2026-03-08 22:53:03.360368974 -0300
++++ b/scripts/synceconnector.py.in	2026-03-09 09:51:47.477346700 -0300
+@@ -3,7 +3,9 @@
+ import stat
+ import platform
+ import re
++import signal
+ import subprocess
++import time
+ import logging, logging.handlers
+ import configparser
+ import dbus
+@@ -30,6 +32,7 @@
+ # serial defaults
+ DEFAULT_SERIAL_NETWORK = "192.168.131"
+ pppopts = ["nodefaultroute", "noauth", "local", "crtscts"]
++SERIAL_PPP_IP_TIMEOUT = 10
+ 
+ # ppp setup
+ #
+@@ -119,13 +122,13 @@
+         logger.error("dhclient failed with return code %d",rc)
+         return False, False
+ 
+-    output_list = output_text.split('\n')
++    output_list = output_text.decode('utf-8', errors='replace').split('\n')
+ 
+     dhcp_ack_re = re.compile('DHCPACK .*from (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+     dhcp_bound_re = re.compile('bound to (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+ 
+     for line in output_list:
+-        logger.debug("dhclient output: "+line)
++        logger.debug("dhclient output: " + line)
+ 
+         match_obj = dhcp_ack_re.match(line)
+         if match_obj != None:
+@@ -182,7 +185,7 @@
+     devnum_re = re.compile('^[^0-9]*([0-9]*)$')
+     devnum_match = devnum_re.match(device_file)
+     if devnum_match != None:
+-        devnum = devnum_match.group(1)
++        devnum = int(devnum_match.group(1)) if devnum_match.group(1) else 0
+     else:
+         devnum = 0
+ 
+@@ -272,11 +275,21 @@
+ 
+     unit_name = "synce-pppd-" + linkname
+ 
++    # Reset any leftover failed/loaded unit with this name so systemd-run
++    # can create a fresh transient unit on reconnect.
++    subprocess.run(
++        ["/bin/systemctl", "reset-failed", unit_name],
++        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
++    )
++
+     cmd_list = [
+         "/bin/systemd-run",
+         "--no-block",
++        "--collect",
+         "--unit=" + unit_name,
+         "--description=SynCE PPP connection (" + linkname + ")",
++        "--property=StandardOutput=null",
++        "--property=StandardError=null",
+     ] + pppd_args
+ 
+     logger.debug("calling systemd-run pppd as:")
+@@ -292,20 +305,32 @@
+     rc = proc.returncode
+ 
+     if rc != 0:
+-        logger.error("failed to start pppd service, return code %d", rc)
++        logger.error("failed to start pppd service, return code %d: %s", rc,
++                     output_text.decode('utf-8', errors='replace').strip())
+         return False
+ 
+-    # pppd writes its pidfile once it has initialised.  Poll until it appears
+-    # (or we hit the timeout) so callers know the link is coming up.
++    # pppd writes its pidfile immediately on startup, before running the
++    # connect script and before IPCP assigns the IP address.  We must wait
++    # for the local IP to be actually assigned to the ppp interface before
++    # signalling dccm; otherwise dccm starts polling a non-existent address.
++    import socket
+     pidfile = VAR_PPP + "/ppp-" + linkname + ".pid"
+-    logger.debug("waiting for pppd pidfile: %s", pidfile)
+-    for _ in range(30):
+-        if os.path.isfile(pidfile):
+-            logger.debug("pppd pidfile found, connection established")
++    logger.debug("waiting for pppd pidfile and PPP link: %s", pidfile)
++    for _ in range(SERIAL_PPP_IP_TIMEOUT):
++        if not os.path.isfile(pidfile):
++            time.sleep(1)
++            continue
++        try:
++            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
++            s.bind((local_ip, 0))
++            s.close()
++            logger.debug("PPP link up, local IP %s assigned", local_ip)
+             return True
++        except OSError:
++            pass
+         time.sleep(1)
+ 
+-    logger.error("timed out waiting for pppd pidfile %s", pidfile)
++    logger.error("timed out waiting for PPP link with local IP %s", local_ip)
+     return False
+ 
+ 
+--- a/scripts/udev-synce-serial.in	2026-03-08 22:53:03.320368974 -0300
++++ b/scripts/udev-synce-serial.in	2026-03-08 22:49:43.390844900 -0300
+@@ -61,7 +61,7 @@
+         sys.exit(1)
+ 
+     # see the "linkname" option in the man page for pppd
+-    linkname = "synce-device"+devnum
++    linkname = "synce-device"+str(devnum)
+ 
+     if action == "add":
+         logger.debug("running as addon for device "+device_file)

@@ -1,0 +1,265 @@
+Description: Port Python bindings to Cython 3 / Python 3
+ Replace pyrexc with cython3, update pyrapi2.pyx to use Python 3 C API
+ (PyBytes_* instead of PyString_*, PyCapsule_* instead of PyCObject_*),
+ fix Python 2-isms (259L, basestring), add language_level=3 directive.
+Author: Gustavo Perez Reyes <ghreyes71@gmail.com>
+Forwarded: not-needed
+Last-Update: 2026-03-03
+
+Index: synce-core-0.17/m4/python.m4
+===================================================================
+--- synce-core-0.17.orig/m4/python.m4
++++ synce-core-0.17/m4/python.m4
+@@ -8,8 +8,8 @@
+ [AC_REQUIRE([AM_PATH_PYTHON])
+ AC_MSG_CHECKING(for headers required to compile python extensions)
+ dnl deduce PYTHON_INCLUDES
+-py_prefix=`$PYTHON -c "import sys; print sys.prefix"`
+-py_exec_prefix=`$PYTHON -c "import sys; print sys.exec_prefix"`
++py_prefix=`$PYTHON -c "import sys; print(sys.prefix)"`
++py_exec_prefix=`$PYTHON -c "import sys; print(sys.exec_prefix)"`
+ PYTHON_INCLUDES="-I${py_prefix}/include/python${PYTHON_VERSION}"
+ if test "$py_prefix" != "$py_exec_prefix"; then
+   PYTHON_INCLUDES="$PYTHON_INCLUDES -I${py_exec_prefix}/include/python${PYTHON_VERSION}"
+Index: synce-core-0.17/configure.ac
+===================================================================
+--- synce-core-0.17.orig/configure.ac
++++ synce-core-0.17/configure.ac
+@@ -251,13 +251,13 @@
+         minimum_version=$enable_python
+ 	enable_python=yes
+     else
+-        minimum_version=2.3
++        minimum_version=3.0
+     fi
+ 	AM_PATH_PYTHON($minimum_version, [have_python_path=yes], [have_python_path=no] )
+-	AC_CHECK_PROGS(PYREX, pyrexc)
++	AC_CHECK_PROGS(PYREX, cython3)
+ 	AM_CHECK_PYTHON_HEADERS([have_python_header=yes], [have_python_header=no])
+-	
+-	if test x$have_python_path = xno -o x$have_python_header = xno -o x$PYREX != xpyrexc ; then
++
++	if test x$have_python_path = xno -o x$have_python_header = xno -o x"$PYREX" = x ; then
+             if test x$enable_python = xyes ; then
+                 AC_MSG_ERROR([Building python bindings requested, but can't build them])
+             else
+@@ -269,7 +269,7 @@
+ 	    else
+ 		have_python=yes
+ 	    fi
+-	
++
+ 	    if test x$have_python = xno ; then
+ 	        if test x$enable_python = xyes ; then
+ 	            AC_MSG_ERROR([Building python explicitly requested, but can't build python bindings])
+@@ -278,24 +278,8 @@
+ 	        fi
+ 	    else
+ 
+-dnl # require at least pyrex 0.9.6
+-
+-		AC_MSG_CHECKING([pyrex version])
+-
+-		pyrex_ver=`$PYREX --version 2>&1 | sed -e 's/Pyrex version //'`
+-	 	`echo "$pyrex_ver" | awk 'BEGIN { FS = "."; } { printf "export pyrex_maj_ver=%s export pyrex_min_ver=%s export pyrex_sub_ver=%s", $1, $2, $3;}'`
+-
+-		if test "$pyrex_min_ver" -lt 9 || test "$pyrex_sub_ver" -lt 6 ; then
+-		    AC_MSG_RESULT([$pyrex_ver])
+-		    if test x$enable_python = xyes ; then
+-			AC_MSG_ERROR([Building python explicitly requested, but can't build python bindings, need at least pyrex 0.9.6])
+-		    else
+-			AC_MSG_NOTICE([Not building Python bindings, need at least pyrex 0.9.6])
+-			have_python=no
+-	            fi
+-    		else
+-		    AC_MSG_RESULT([ok])
+-    		fi
++		AC_MSG_CHECKING([cython3 version])
++		AC_MSG_RESULT([ok])
+ 
+ 	    fi
+ 	fi
+Index: synce-core-0.17/python/Makefile.am
+===================================================================
+--- synce-core-0.17.orig/python/Makefile.am
++++ synce-core-0.17/python/Makefile.am
+@@ -1,6 +1,6 @@
+ if HAVE_PYTHON
+ 
+-rapibindingsdir = $(pyexecdir)
++rapibindingsdir = $(PYTHON_EXEC_PREFIX)/lib/python$(PYTHON_VERSION)/dist-packages
+ rapibindings_LTLIBRARIES = pyrapi2.la
+ 
+ pyrapi2_la_CFLAGS = @PYTHON_INCLUDES@ -I$(top_srcdir)/lib/utils -I$(top_builddir)/lib/utils -I$(top_srcdir)/lib/rapi
+@@ -16,5 +16,5 @@
+ 
+ EXTRA_DIST = types.pxi constants.pxi pyrapi2.pyx
+ 
+-pyrapi2.c: $(srcdir)/types.pxi $(srcdir)/pyrapi2.pyx
+-	pyrexc $(srcdir)/pyrapi2.pyx -o ./pyrapi2.c
++pyrapi2.c: $(srcdir)/types.pxi $(srcdir)/constants.pxi $(srcdir)/pyrapi2.pyx
++	$(PYREX) $(srcdir)/pyrapi2.pyx -o ./pyrapi2.c
+Index: synce-core-0.17/python/pyrapi2.pyx
+===================================================================
+--- synce-core-0.17.orig/python/pyrapi2.pyx
++++ synce-core-0.17/python/pyrapi2.pyx
+@@ -1,3 +1,4 @@
++# cython: language_level=3
+ """Python bindings to librapi2
+ 
+ RAPI is the protocol used to communicate with Windows CE and
+@@ -11,8 +12,8 @@
+ import sys
+ 
+ cdef extern from "Python.h":
+-    object PyString_FromStringAndSize ( char *, int )
+-    object PyCObject_FromVoidPtr(void* cobj, void (*destr)(void *))
++    object PyBytes_FromStringAndSize ( char *, Py_ssize_t )
++    object PyCapsule_New(void* pointer, const char* name, void* destructor)
+ 
+ cdef extern from "stdlib.h":
+     void *malloc(size_t size) nogil
+@@ -314,7 +315,7 @@
+ 
+                 retval = IRAPISession_CeRegEnumKeyEx(session.rapi_conn, self.handle, index, name, &name_len, NULL, NULL, NULL, NULL)
+ 
+-                if retval == 259L:
++                if retval == 259:
+                     finished = True
+ 
+ 
+@@ -360,7 +361,7 @@
+ 
+                 retval = IRAPISession_CeRegEnumKeyEx(session.rapi_conn, self.handle, index, name, &name_len, NULL, NULL, NULL, NULL)
+ 
+-                if retval == 259L:
++                if retval == 259:
+                     finished = True
+ 
+ 
+@@ -426,7 +427,7 @@
+                 retval = IRAPISession_CeRegEnumValue(session.rapi_conn, self.handle, index, name, &name_len, NULL, &type, data, &data_size)
+ 
+                 #If return value is 259L, then we are finished
+-                if retval == 259L:
++                if retval == 259:
+                     finished = True
+ 
+ 
+@@ -436,11 +437,11 @@
+ 
+ 
+                     if type == REG_NONE:
+-                        value = PyString_FromStringAndSize(<char *>data, data_size)
++                        value = PyBytes_FromStringAndSize(<char *>data, data_size)
+                     elif type == REG_SZ or type == REG_EXPAND_SZ:
+                         value = wstr_to_utf8(<LPCWSTR> data)
+                     elif type == REG_BINARY:
+-                        value = PyString_FromStringAndSize(<char *>data, data_size)
++                        value = PyBytes_FromStringAndSize(<char *>data, data_size)
+                     elif type == REG_DWORD:
+                         dw_ptr = <LPDWORD> data
+                         value = self._dword_le_to_host(dw_ptr[0])
+@@ -448,12 +449,12 @@
+                         dw_ptr = <LPDWORD> data
+                         value = self._dword_be_to_host(dw_ptr[0])
+                     elif type == REG_LINK:
+-                        value = PyString_FromStringAndSize(<char *>data, data_size)
++                        value = PyBytes_FromStringAndSize(<char *>data, data_size)
+                     elif type == REG_MULTI_SZ:
+                         # FIXME - this is doable
+-                        value = PyString_FromStringAndSize(<char *>data, data_size)
++                        value = PyBytes_FromStringAndSize(<char *>data, data_size)
+                     else:
+-                        value = PyString_FromStringAndSize(<char *>data, data_size)
++                        value = PyBytes_FromStringAndSize(<char *>data, data_size)
+ 
+                     result.append( (wstr_to_utf8(name) , type,value)    )
+ 
+@@ -738,11 +739,11 @@
+                 raise RAPIError(retval)
+ 
+             if type == REG_NONE:
+-                value = PyString_FromStringAndSize(<char *>data, data_size)
++                value = PyBytes_FromStringAndSize(<char *>data, data_size)
+             elif type == REG_SZ or type == REG_EXPAND_SZ:
+                 value = wstr_to_utf8(<LPCWSTR> data)
+             elif type == REG_BINARY:
+-                value = PyString_FromStringAndSize(<char *>data, data_size)
++                value = PyBytes_FromStringAndSize(<char *>data, data_size)
+             elif type == REG_DWORD:
+                 dw_ptr = <LPDWORD> data
+                 value = self._dword_le_to_host(dw_ptr[0])
+@@ -750,12 +751,12 @@
+                 dw_ptr = <LPDWORD> data
+                 value = self._dword_be_to_host(dw_ptr[0])
+             elif type == REG_LINK:
+-                value = PyString_FromStringAndSize(<char *>data, data_size)
++                value = PyBytes_FromStringAndSize(<char *>data, data_size)
+             elif type == REG_MULTI_SZ:
+                 # FIXME - this is doable
+-                value = PyString_FromStringAndSize(<char *>data, data_size)
++                value = PyBytes_FromStringAndSize(<char *>data, data_size)
+             else:
+-                value = PyString_FromStringAndSize(<char *>data, data_size)
++                value = PyBytes_FromStringAndSize(<char *>data, data_size)
+ 
+             return (type,value)
+         finally:
+@@ -809,11 +810,11 @@
+                 raise RAPIError(retval)
+ 
+             if type == REG_NONE:
+-                value = PyString_FromStringAndSize(<char *>data, data_size)
++                value = PyBytes_FromStringAndSize(<char *>data, data_size)
+             elif type == REG_SZ or type == REG_EXPAND_SZ:
+                 value = wstr_to_utf8(<LPCWSTR> data)
+             elif type == REG_BINARY:
+-                value = PyString_FromStringAndSize(<char *>data, data_size)
++                value = PyBytes_FromStringAndSize(<char *>data, data_size)
+             elif type == REG_DWORD:
+                 dw_ptr = <LPDWORD> data
+                 value = self._dword_le_to_host(dw_ptr[0])
+@@ -821,12 +822,12 @@
+                 dw_ptr = <LPDWORD> data
+                 value = self._dword_be_to_host(dw_ptr[0])
+             elif type == REG_LINK:
+-                value = PyString_FromStringAndSize(<char *>data, data_size)
++                value = PyBytes_FromStringAndSize(<char *>data, data_size)
+             elif type == REG_MULTI_SZ:
+                 # FIXME - this is doable
+-                value = PyString_FromStringAndSize(<char *>data, data_size)
++                value = PyBytes_FromStringAndSize(<char *>data, data_size)
+             else:
+-                value = PyString_FromStringAndSize(<char *>data, data_size)
++                value = PyBytes_FromStringAndSize(<char *>data, data_size)
+ 
+             return value
+         finally:
+@@ -859,7 +860,7 @@
+ 
+         try:
+             if value_type == None:
+-                if isinstance(value_data, basestring):
++                if isinstance(value_data, (str, bytes)):
+                     value_type = REG_SZ
+                 else:
+                     value_type = REG_DWORD
+@@ -1026,7 +1027,7 @@
+         free(readbuf)
+ 
+         cdef object returnstring
+-        returnstring = PyString_FromStringAndSize(<char *>buffer, total_read)
++        returnstring = PyBytes_FromStringAndSize(<char *>buffer, total_read)
+         free(buffer)
+         return returnstring
+ 
+@@ -1219,7 +1220,7 @@
+         # this gives access to the IRapisession C object wrapped in a
+         # python CObject, be careful !!!
+         elif name == "rapi_connection":
+-            return PyCObject_FromVoidPtr(<void *>self.rapi_conn, NULL)
++            return PyCapsule_New(<void *>self.rapi_conn, "IRAPISession", NULL)
+         else:
+             raise AttributeError("%s instance has no attribute '%s'" % (self.__class__.__name__, name))
+ 

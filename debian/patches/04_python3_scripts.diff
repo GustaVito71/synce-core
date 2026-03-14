@@ -1,0 +1,398 @@
+Description: Port scripts from Python 2 to Python 3
+ Convert all Python scripts from Python 2 to Python 3 syntax:
+ - configparser (was ConfigParser)
+ - print() function (was print statement)
+ - input() (was raw_input())
+ - except Exception as e (was except Exception, e)
+ - 'key in dict' (was dict.has_key(key))
+ - Update shebangs to #!/usr/bin/env python3
+Author: Gustavo Perez Reyes <ghreyes71@gmail.com>
+Forwarded: not-needed
+Last-Update: 2026-03-03
+
+Index: synce-core-0.17/dccm/synce-unlock
+===================================================================
+--- synce-core-0.17.orig/dccm/synce-unlock
++++ synce-core-0.17/dccm/synce-unlock
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python
++#!/usr/bin/env python3
+ 
+ # A simple script to provide a password to a locked Windows
+ # Mobile device from the command line
+@@ -33,34 +33,34 @@ def unlock_device(device_path, password)
+ 	device = dbus.Interface(dbus.SystemBus().get_object(DBUS_DCCM_BUSNAME, device_path), DBUS_DCCM_DEVICE_IFACE)
+ 
+ 	deviceName = device.GetName()
+-	print "Unlocking device connected at path %s with name %s" % (device_path, deviceName)
++	print("Unlocking device connected at path %s with name %s" % (device_path, deviceName))
+ 
+ 	pw_flags = device.GetPasswordFlags()
+ 	if pw_flags == DCCM_DEVICE_PASSWORD_FLAG_UNSET or pw_flags == DCCM_DEVICE_PASSWORD_FLAG_UNLOCKED:
+-		print "No password required"
++		print("No password required")
+ 		return 0
+ 
+ 	if pw_flags == DCCM_DEVICE_PASSWORD_FLAG_PROVIDE_ON_DEVICE:
+-		print "WM6 device requires password on device"
++		print("WM6 device requires password on device")
+ 		return 2
+ 
+ 	if pw_flags == DCCM_DEVICE_PASSWORD_FLAG_CHECKING:
+-		print "aError: an authorization attempt is already in progress"
++		print("aError: an authorization attempt is already in progress")
+ 		return 2
+ 
+-	print "Authorization required for device %s." % deviceName
++	print("Authorization required for device %s." % deviceName)
+ 
+ 	rc = device.ProvidePassword(password)
+ 	if (rc == True):
+-		print "Authorization succeeded"
++		print("Authorization succeeded")
+ 		return 0
+ 
+-	print "Authorization failed"
++	print("Authorization failed")
+ 	return 1
+ 
+ 
+ def usage():
+-	print "Usage: %s [ -d <device-name> ] [ -p ] [ <password> ]" % sys.argv[0]
++	print("Usage: %s [ -d <device-name> ] [ -p ] [ <password> ]" % sys.argv[0])
+ 
+ 
+ if __name__ == "__main__":
+@@ -81,18 +81,18 @@ if __name__ == "__main__":
+ 			device_name = a
+ 		elif o == "-p":
+ 			password_prompt = True
+-			password = raw_input("Enter password: ")
++			password = input("Enter password: ")
+ 		else:
+ 			usage()
+ 			sys.exit(2)
+ 
+ 	if len(args) > 1:
+-		print "Too many arguments"
++		print("Too many arguments")
+ 		usage()
+ 		sys.exit(2)
+ 
+ 	if password_prompt == True and len(args) > 0:
+-		print "Too many arguments"
++		print("Too many arguments")
+ 		usage()
+ 		sys.exit(2)
+ 
+@@ -106,7 +106,7 @@ if __name__ == "__main__":
+ 	device_manager = dbus.Interface(dbus.SystemBus().get_object(DBUS_DCCM_BUSNAME, DBUS_DCCM_MANAGER_OBJPATH), DBUS_DCCM_MANAGER_IFACE)
+ 	obj_paths = device_manager.GetConnectedDevices()
+ 	if len(obj_paths) == 0:
+-		print "No connected devices found"
++		print("No connected devices found")
+ 		sys.exit(2)
+ 
+ 	found_device = None
+@@ -123,7 +123,7 @@ if __name__ == "__main__":
+ 			break
+ 
+ 	if found_device == None:
+-		print "Device not found"
++		print("Device not found")
+ 		sys.exit(2)
+ 
+ 	rc = unlock_device(found_device, password)
+Index: synce-core-0.17/scripts/synce-serial.in
+===================================================================
+--- synce-core-0.17.orig/scripts/synce-serial.in
++++ synce-core-0.17/scripts/synce-serial.in
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python
++#!/usr/bin/env python3
+ 
+ # Some serial devices will not be picked up automatically by synce,
+ # eg those on a serial to usb bridge. This tool will initiate connection.
+@@ -12,7 +12,7 @@ import time
+ import subprocess
+ import logging, logging.handlers
+ import platform
+-import ConfigParser
++import configparser
+ import dbus
+ import gudev
+ 
+@@ -21,14 +21,14 @@ import synceconnector
+ from synceconnector import signal_dccm_connect, process_config, get_logger, serial_stop_device, serial_start_device, serial_get_address, serial_get_devnum
+ 
+ def print_usage():
+-	print "Usage:"
+-	print "------\n"
+-	print "synce-serial <action> <device_file>"
+-	print "\nwhere:\n"
+-	print "<action>      - add or remove, to start or bring down the connection"
+-	print "<device_file> - the device file for the connected device, eg. /dev/ttyS1"
+-	print "For example:"
+-	print "  synce-serial add /dev/ttyS1\n"
++	print("Usage:")
++	print("------\n")
++	print("synce-serial <action> <device_file>")
++	print("\nwhere:\n")
++	print("<action>      - add or remove, to start or bring down the connection")
++	print("<device_file> - the device file for the connected device, eg. /dev/ttyS1")
++	print("For example:")
++	print("  synce-serial add /dev/ttyS1\n")
+ 
+ 
+ #
+@@ -37,11 +37,11 @@ def print_usage():
+ if __name__ == '__main__':
+ 
+     if os.geteuid() != 0:
+-	print "\nError: must be run as root\n"
++	print("\nError: must be run as root\n")
+ 	sys.exit(1)
+ 
+     if len(sys.argv) != 3:
+-	print "\nError: invalid argument count\n"
++	print("\nError: invalid argument count\n")
+ 	print_usage()	
+ 	sys.exit(1)
+ 
+@@ -57,7 +57,7 @@ if __name__ == '__main__':
+ 
+     action = sys.argv[1]
+     if action != "add" and action != "remove":
+-        print "\nError: invalid action\n"
++        print("\nError: invalid action\n")
+         print_usage()
+         sys.exit(1)
+ 
+@@ -95,7 +95,7 @@ if __name__ == '__main__':
+             if stat.S_ISCHR(os.stat(device_file).st_mode) == 0:
+                 logger.critical("unable to find a character device named "+device_file)
+                 sys.exit(1)
+-        except Exception,e:
++        except Exception as e:
+             logger.critical("Error stat'ing device file %s: %s" % (device_file, e))
+             sys.exit(1)
+ 
+Index: synce-core-0.17/scripts/synceconnector.py.in
+===================================================================
+--- synce-core-0.17.orig/scripts/synceconnector.py.in
++++ synce-core-0.17/scripts/synceconnector.py.in
+@@ -5,7 +5,7 @@ import platform
+ import re
+ import subprocess
+ import logging, logging.handlers
+-import ConfigParser
++import configparser
+ import dbus
+ 
+ DBUS_DBUS_BUSNAME       = "org.freedesktop.DBus"
+@@ -71,7 +71,7 @@ def rndis_static_config(iface):
+     try:
+         proc = subprocess.Popen(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+         output_text = proc.communicate()[0]
+-    except Exception,e:
++    except Exception as e:
+         logger.error("failure running ifconfig: %s" % e)
+         return False, False
+ 
+@@ -109,7 +109,7 @@ def rndis_dhcp_config(iface):
+     try:
+         proc = subprocess.Popen(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+         output_text = proc.communicate()[0]
+-    except Exception,e:
++    except Exception as e:
+         logger.error("failure running dhclient: %s" % e)
+         return False, False
+ 
+@@ -161,7 +161,7 @@ def rndis_dhcp_unconfig(iface):
+     try:
+         proc = subprocess.Popen(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+         output_text = proc.communicate()[0]
+-    except Exception,e:
++    except Exception as e:
+         logger.error("failure running dhclient: %s" % e)
+         return True
+ 
+@@ -218,13 +218,13 @@ def serial_stop_device(linkname):
+             f = open(pidfile, 'r')
+             textpid = f.readline().rstrip()
+             f.close()
+-        except Exception, e:
++        except Exception as e:
+             logger.warning("unable to read PID from %s: %s", pidfile, e)
+             return False
+ 
+         try:
+             pid = int(textpid)
+-        except Exception, e:
++        except Exception as e:
+             logger.error("found invalid PID in %s: %s", pidfile, e)
+             return False
+ 
+@@ -232,7 +232,7 @@ def serial_stop_device(linkname):
+ 
+         try:
+             os.kill(pid, signal.SIGTERM)
+-        except Exception,e:
++        except Exception as e:
+             logger.error("unable stop the SynCE connection with PID %d: %s", pid, e)
+             return False
+ 
+@@ -265,7 +265,7 @@ def serial_start_device(device_file, loc
+     try:
+         proc = subprocess.Popen(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+         output_text = proc.communicate()[0]
+-    except Exception,e:
++    except Exception as e:
+         logger.error("failure running pppd: %s" % e)
+         return False
+ 
+@@ -303,7 +303,7 @@ def run_dccm(device_path, device_ip, loc
+ 
+     try:
+         os.execv("@LIBEXECDIR@/dccm", cmd_list)
+-    except Exception,e:
++    except Exception as e:
+         logger.error("failed to exec dccm !!: %s" % e)
+ 
+     return
+@@ -327,7 +327,7 @@ def signal_dccm_connect(device_path, dev
+ 
+     try:
+         dccm_manager = dbus.Interface(dbus.SystemBus().get_object(DBUS_SYNCE_BUSNAME, DBUS_SYNCE_MANAGER_OBJPATH), DBUS_SYNCE_MANAGER_IFACE)
+-    except Exception,e:
++    except Exception as e:
+         logger.critical("failed to connect to dccm device manager %s: %s" % (device_path, e))
+         return False
+ 
+@@ -341,7 +341,7 @@ def signal_dccm_connect(device_path, dev
+ 
+     try:
+         dccm_manager.DeviceConnected(device_path, device_ip, local_ip, rndis)
+-    except Exception, e:
++    except Exception as e:
+         logger.critical("failed to signal device connect to dccm device manager %s: %s" % (DBUS_SYNCE_MANAGER_OBJPATH, e))
+         return False
+ 
+@@ -366,7 +366,7 @@ def signal_dccm_disconnect(device_path):
+ 
+     try:
+         dccm_manager = dbus.Interface(dbus.SystemBus().get_object(DBUS_SYNCE_BUSNAME, DBUS_SYNCE_MANAGER_OBJPATH), DBUS_SYNCE_MANAGER_IFACE)
+-    except Exception,e:
++    except Exception as e:
+         logger.critical("failed to connect to dccm device manager %s: %s" % (device_path, e))
+         return False
+ 
+@@ -375,7 +375,7 @@ def signal_dccm_disconnect(device_path):
+ 
+     try:
+         dccm_manager.DeviceDisconnected(device_path)
+-    except Exception, e:
++    except Exception as e:
+         logger.critical("failed to signal device disconnect to dccm device manager %s: %s" % (DBUS_SYNCE_MANAGER_OBJPATH, e))
+         return False
+ 
+@@ -392,10 +392,10 @@ def process_config():
+     global DEFAULT_SERIAL_NETWORK
+     global pppopts
+ 
+-    config = ConfigParser.ConfigParser()
++    config = configparser.ConfigParser()
+     try:
+         config.read(config_file)
+-    except Exception,e:
++    except Exception as e:
+         logger.warning("failed to parse config file %s: %s" % (config_file, e))
+         return False
+ 
+Index: synce-core-0.17/scripts/udev-synce-rndis.in
+===================================================================
+--- synce-core-0.17.orig/scripts/udev-synce-rndis.in
++++ synce-core-0.17/scripts/udev-synce-rndis.in
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python
++#!/usr/bin/env python3
+ 
+ import sys
+ import os
+@@ -20,16 +20,16 @@ if __name__ == '__main__':
+     device_ip = False
+     local_ip = False
+ 
+-    if os.environ.has_key("ACTION"):
++    if "ACTION" in os.environ:
+         action = os.environ["ACTION"]
+ 
+-        if os.environ.has_key("INTERFACE"):
++        if "INTERFACE" in os.environ:
+             iface = os.environ["INTERFACE"]
+         else:
+             logger.critical("Udev environment not set: INTERFACE missing")
+             sys.exit(1)
+ 
+-        if os.environ.has_key("DEVPATH"):
++        if "DEVPATH" in os.environ:
+             device_path = os.environ["DEVPATH"]
+         else:
+             logger.critical("Udev environment not set: DEVPATH missing")
+Index: synce-core-0.17/scripts/udev-synce-serial.in
+===================================================================
+--- synce-core-0.17.orig/scripts/udev-synce-serial.in
++++ synce-core-0.17/scripts/udev-synce-serial.in
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python
++#!/usr/bin/env python3
+ 
+ import sys
+ import os
+@@ -8,7 +8,7 @@ import time
+ import subprocess
+ import logging, logging.handlers
+ import platform
+-import ConfigParser
++import configparser
+ import dbus
+ 
+ sys.path.insert(0,"@SYNCEDATADIR@")
+@@ -26,16 +26,16 @@ if __name__ == '__main__':
+ 
+     device_path = False
+ 
+-    if os.environ.has_key("ACTION"):
++    if "ACTION" in os.environ:
+         action = os.environ["ACTION"]
+ 
+-        if os.environ.has_key("DEVPATH"):
++        if "DEVPATH" in os.environ:
+             device_path = os.environ["DEVPATH"]
+         else:
+             logger.critical("Udev environment not set: DEVPATH missing")
+             sys.exit(1)
+ 
+-        if os.environ.has_key("SUBSYSTEM"):
++        if "SUBSYSTEM" in os.environ:
+             subsystem = os.environ["SUBSYSTEM"]
+         else:
+             logger.critical("Udev environment not set: SUBSYSTEM missing")
+@@ -48,7 +48,7 @@ if __name__ == '__main__':
+         else:
+             try:
+                 device_file = os.environ["DEVNAME"]
+-            except Exception,e:
++            except Exception as e:
+                 logger.critical("Udev environment not set: DEVNAME missing")
+                 sys.exit(1)
+ 
+@@ -70,7 +70,7 @@ if __name__ == '__main__':
+             if stat.S_ISCHR(os.stat(device_file).st_mode) == 0:
+                 logger.critical("unable to find a character device named "+device_file)
+                 sys.exit(1)
+-        except Exception,e:
++        except Exception as e:
+             logger.critical("Error stat'ing device file %s: %s" % (device_file, e))
+             sys.exit(1)
+ 

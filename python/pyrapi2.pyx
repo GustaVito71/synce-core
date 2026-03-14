@@ -1348,7 +1348,6 @@ cdef class RAPISession:
 
         cdef LPCE_FIND_DATA find_data
         cdef DWORD numberOfFiles
-        find_data = NULL
 
         cdef CE_FIND_DATA found_file
 

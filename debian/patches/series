@@ -1,2 +1,8 @@
 rename-p-binaries.diff
 py-findallfiles-segfault.diff
+03_libtool_modern.diff
+04_python3_scripts.diff
+05_dbus_policy_fix.diff
+06_udev_systemd_cgroup_fix.diff
+07_cython3_bindings.diff
+08_serial_python3_fixes.diff
