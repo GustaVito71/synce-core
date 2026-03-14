@@ -1,5 +1,7 @@
 #!/usr/bin/make -f
 
+export PATH := $(PATH):/sbin:/usr/sbin
+
 %:
 	dh $@ --with python3
 
